@@ -82,13 +82,21 @@ def _build_article_markdown(article: dict, nickname: str) -> str:
         bullets="-",
     ).strip()
 
+    # 可读日期（UTC+8）；publish_time 原始时间戳保留给程序用
+    from datetime import datetime, timezone, timedelta
+    pt = article.get('publish_time', 0) or 0
+    date_str = (datetime.fromtimestamp(pt, timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M")
+                if pt else "")
+
+    # author 微信常缺失 → 回退成公众号名，保证字段不空
     fm_lines = [
         "---",
         f"title: {(article.get('title', '') or '').replace(chr(10), ' ')}",
-        f"author: {article.get('author', '') or ''}",
+        f"author: {article.get('author', '') or nickname}",
         f"nickname: {nickname}",
         f"fakeid: {article.get('fakeid', '')}",
-        f"publish_time: {article.get('publish_time', 0) or 0}",
+        f"date: {date_str}",
+        f"publish_time: {pt}",
         f"source_url: {article.get('link', '') or ''}",
         "---",
         "",
