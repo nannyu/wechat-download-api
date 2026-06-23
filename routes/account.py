@@ -14,6 +14,7 @@ from pydantic import BaseModel
 from typing import Optional, Dict
 import httpx
 from utils.auth_manager import auth_manager
+from utils.wechat_status import is_login_expired, LOGIN_EXPIRED_MSG
 
 router = APIRouter()
 
@@ -100,8 +101,12 @@ async def get_account_info(
                     data=data
                 )
             else:
+                ret_code = base_resp.get("ret")
                 err_msg = base_resp.get("err_msg", "未知错误")
-                print(f"[ERROR] WeChat API error: {err_msg}")
+                print(f"[ERROR] WeChat API error: ret={ret_code}, {err_msg}")
+                # 登录态失效 → 明确提示重新扫码
+                if is_login_expired(ret_code, err_msg):
+                    return AccountInfoResponse(success=False, error=LOGIN_EXPIRED_MSG)
                 return AccountInfoResponse(
                     success=False,
                     error=f"获取信息失败: {err_msg}"

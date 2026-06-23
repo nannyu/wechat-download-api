@@ -14,8 +14,10 @@ from pydantic import BaseModel
 from typing import Optional, List
 import time
 import httpx
+import json
 from utils.auth_manager import auth_manager
 from utils.image_proxy import proxy_image_url
+from utils.wechat_status import is_login_expired, LOGIN_EXPIRED_MSG
 
 router = APIRouter()
 
@@ -127,11 +129,20 @@ async def search_accounts(query: str = Query(..., description="公众号名称�
                     }
                 )
             else:
+                base = result.get("base_resp", {})
+                ret_code = base.get("ret")
+                err_msg = base.get("err_msg", "未知错误")
+                # 登录态失效（ret=200003 invalid session）→ 明确提示重新扫码
+                if is_login_expired(ret_code, err_msg):
+                    return SearchResponse(success=False, error=LOGIN_EXPIRED_MSG)
                 return SearchResponse(
                     success=False,
-                    error=f"搜索失败: {result.get('base_resp', {}).get('err_msg', '未知错误')}"
+                    error=f"搜索失败: ret={ret_code}, msg={err_msg}"
                 )
-                
+
+    except json.JSONDecodeError:
+        # 微信返回了非 JSON（通常是登录/验证页）→ 登录态失效
+        return SearchResponse(success=False, error=LOGIN_EXPIRED_MSG)
     except Exception as e:
         print(f"[ERROR] search failed: {str(e)}")
         return SearchResponse(

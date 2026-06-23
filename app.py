@@ -21,7 +21,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pathlib import Path
 
 # 导入路由
-from routes import article, articles, search, admin, login, image, health, stats, rss, account
+from routes import article, articles, search, admin, login, image, health, stats, rss, account, feed
 from utils.rss_store import init_db
 from utils.rss_poller import rss_poller
 
@@ -104,6 +104,7 @@ app.include_router(admin.router, prefix="/api/admin", tags=["管理"])
 app.include_router(login.router, prefix="/api/login", tags=["登录"])
 app.include_router(image.router, prefix="/api", tags=["图片代理"])
 app.include_router(rss.router, prefix="/api", tags=["RSS 订阅"])
+app.include_router(feed.router, prefix="/api", tags=["Feed（文章列表 / markdown 导出）"])
 
 # 静态文件
 static_dir = Path(__file__).parent / "static"

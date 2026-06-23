@@ -379,6 +379,39 @@ def get_all_articles(limit: int = 50) -> List[Dict]:
         conn.close()
 
 
+def get_article_by_id(article_id: int) -> Optional[Dict]:
+    """按 id 取单篇文章（含 content / plain_content）。供 md 导出接口用。"""
+    conn = _get_conn()
+    try:
+        row = conn.execute(
+            "SELECT * FROM articles WHERE id=?", (article_id,)
+        ).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def get_feed_articles(since: int = 0, fakeid: Optional[str] = None,
+                      limit: int = 50) -> List[Dict]:
+    """
+    按 publish_time 正序 + 增量游标返回本地已抓取文章（含 id），供 feed 同步用。
+    客户端保存上次返回的最后一篇 publish_time 作为下次 since，循环拉到空为止。
+    """
+    conn = _get_conn()
+    try:
+        sql = "SELECT * FROM articles WHERE publish_time > ?"
+        params: list = [since]
+        if fakeid:
+            sql += " AND fakeid=?"
+            params.append(fakeid)
+        sql += " ORDER BY publish_time ASC LIMIT ?"
+        params.append(limit)
+        rows = conn.execute(sql, params).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
 def _calculate_aggregated_limits(subscription_count: int) -> tuple:
     """
     根据订阅数量动态计算聚合 RSS 的限制策略

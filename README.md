@@ -22,6 +22,7 @@
 
 - **RSS 订阅** — 订阅任意公众号，自动定时拉取新文章（**包含完整文章内容和图片**），生成标准 RSS 2.0 源，接入 FreshRSS / Feedly 等阅读器即可使用
 - **文章内容获取** — 通过 URL 获取文章完整内容（标题、作者、正文 HTML / 纯文本、图片列表）
+- **Markdown 导出** — 把已抓取文章导出为 markdown（带 YAML frontmatter，图片走代理可直接渲染），可导入 Obsidian / Logseq；支持按时间游标增量同步全部文章
 - **反风控体系** — Chrome TLS 指纹模拟 + SOCKS5 代理池轮转 + 三层自动限频，有效对抗微信封控
 - **文章列表 & 搜索** — 获取任意公众号历史文章列表，支持分页和关键词搜索
 - **公众号搜索** — 按名称搜索公众号，获取 FakeID
@@ -73,14 +74,6 @@ docker run -d \
 **不想折腾部署？30 秒注册即可使用** 👉 **[wechatrss.waytomaster.com](https://wechatrss.waytomaster.com)**
 
 搜索公众号名称，拿到 RSS 链接，丢进你的阅读器——Feedly、Inoreader、NetNewsWire 全部兼容。
-
-| 套餐 | 公众号数量 | 价格 |
-|------|-----------|------|
-| 免费版 | 2 个 | ¥0 |
-| 基础版 | 20 个 | ¥9.9/月 |
-| 专业版 | 50 个 | ¥19.9/月 |
-
-> 免费版够用就一直免费，不够了再升级，没有套路。
 
 ---
 
@@ -361,6 +354,32 @@ curl "http://localhost:5000/api/rss/MzA1MjM1ODk2MA=="
 | `GET` | `/api/rss/subscriptions` | 获取订阅列表 |
 | `POST` | `/api/rss/poll` | 手动触发轮询 |
 | `GET` | `/api/rss/status` | 轮询器状态 |
+
+### Markdown 导出 / 文章同步
+
+把已抓取的文章拉成 markdown（带 YAML frontmatter），可直接导入 Obsidian / Logseq 等工具。
+
+`GET /api/feed/articles.json` — 列出本地已抓取的文章元数据（含文章 `id`），按时间游标增量同步
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `since` | int（查询） | 否 | Unix 时间戳，返回 `publish_time > since` 的文章；首次传 `0` |
+| `fakeid` | string（查询） | 否 | 只看某个公众号 |
+| `limit` | int（查询） | 否 | 单次返回条数（1-200），默认 `50` |
+
+响应含 `next_since`（本批最后一篇的发布时间），作为下次 `since` 循环调用，拉到 `articles` 为空即同步完成；之后用保存的 `next_since` 做每日增量。
+
+`GET /api/feed/article/{id}.md` — 按 `id` 获取单篇文章的 markdown 正文（带 title / author / nickname / fakeid / publish_time / source_url 等 frontmatter）
+
+```bash
+# 1. 拉文章列表拿 id（循环 since 直到返回空）
+curl "http://localhost:5000/api/feed/articles.json?since=0&limit=200"
+
+# 2. 按 id 下载某篇 markdown（浏览器 / 下载工具会自动存成「标题.md」）
+curl -OJ "http://localhost:5000/api/feed/article/1.md"
+```
+
+状态码：`200` 正文 / `404` 不存在 / `422` 内容尚未抓取完成（稍后重试）。
 
 ### 其他接口
 

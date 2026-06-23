@@ -15,6 +15,7 @@ from typing import Optional, List, Dict
 import json
 import httpx
 from utils.auth_manager import auth_manager
+from utils.wechat_status import is_login_expired, is_invalid_fakeid, LOGIN_EXPIRED_MSG
 
 router = APIRouter()
 
@@ -119,16 +120,16 @@ async def get_articles(
 
             print(f"[ERROR] WeChat API error: ret={ret_code}, msg={error_msg}")
 
-            # 检查是否需要重新登录
-            if "login" in error_msg.lower() or ret_code == 200003:
+            # 检查是否需要重新登录（统一用 wechat_status 判断）
+            if is_login_expired(ret_code, error_msg):
                 return ArticlesResponse(
                     success=False,
-                    error="登录已过期，请重新登录"
+                    error=LOGIN_EXPIRED_MSG
                 )
 
             # [2026-05-18] 同步 SaaS 修复：ret=200002 + "invalid args" → fakeid 已失效
             # 给用户清晰提示而非通用错误
-            if ret_code == 200002 and "invalid arg" in (error_msg or "").lower():
+            if is_invalid_fakeid(ret_code, error_msg):
                 return ArticlesResponse(
                     success=False,
                     error="该公众号在微信侧已无法访问（可能已注销/改名/重新注册），请重新搜索最新的同名公众号"
