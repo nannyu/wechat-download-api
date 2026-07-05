@@ -105,6 +105,25 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# [2026-07-05] 全站 gzip：RSS 大源 ~8x 压缩，治阅读器超时 + 所有 JSON 响应提速。
+# 按 more_body 分块压（保住 streaming 低内存）；仅客户端 Accept-Encoding 含 gzip 时压；跳过 /mcp。
+from fastapi.middleware.gzip import GZipMiddleware
+
+
+class _GZipExceptMCP:
+    def __init__(self, app):
+        self.app = app
+        self._gzip = GZipMiddleware(app, minimum_size=500)
+
+    async def __call__(self, scope, receive, send):
+        if scope.get("type") == "http" and not scope.get("path", "").startswith("/mcp"):
+            await self._gzip(scope, receive, send)
+        else:
+            await self.app(scope, receive, send)
+
+
+app.add_middleware(_GZipExceptMCP)
+
 # 注册路由（注意：articles.router 必须在 search.router 之前注册，避免路由冲突）
 app.include_router(health.router, prefix="/api", tags=["健康检查"])
 app.include_router(stats.router, prefix="/api", tags=["统计信息"])
