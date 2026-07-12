@@ -21,6 +21,7 @@
 ## 功能特性
 
 - **RSS 订阅** — 订阅任意公众号，自动定时拉取新文章（**包含完整文章内容和图片**），生成标准 RSS 2.0 源，接入 FreshRSS / Feedly 等阅读器即可使用
+- **MCP · AI 客户端接入** — 内置 MCP 服务，Claude / Codex / Cline / Cursor 等 AI 客户端可**直接搜索、订阅、读文章**（6 个工具，静态 Token 鉴权，单用户自托管无需 OAuth）
 - **文章内容获取** — 通过 URL 获取文章完整内容（标题、作者、正文 HTML / 纯文本、图片列表）
 - **Markdown 导出** — 把已抓取文章导出为 markdown（带 YAML frontmatter，图片走代理可直接渲染），可导入 Obsidian / Logseq；支持按时间游标增量同步全部文章
 - **反风控体系** — Chrome TLS 指纹模拟 + SOCKS5 代理池轮转 + 三层自动限频，有效对抗微信封控
@@ -203,6 +204,55 @@ cp env.example .env
 
 ---
 
+## MCP — AI 客户端接入
+
+内置 **MCP（Model Context Protocol）服务**，让 Claude、Codex、Cline、Cursor 等 AI 客户端**直接搜索公众号、订阅、读文章**，不用切网页、不用手动调接口——对 AI 说"帮我订阅 XX 公众号、把最新几篇总结一下"即可。
+
+**6 个工具：**
+
+| 工具 | 作用 |
+|------|------|
+| `search_accounts` | 按名称搜索公众号，拿 fakeid |
+| `subscribe_account` | 订阅公众号（传 fakeid） |
+| `unsubscribe_account` | 取消订阅 |
+| `list_subscriptions` | 列出已订阅的公众号 |
+| `get_recent_articles` | 拉最新文章（支持时间游标增量、按公众号过滤） |
+| `read_article` | 读某篇文章的完整正文 |
+
+**启用（`.env`）：** 单用户自托管，鉴权走**静态 Bearer Token**，无需 OAuth。
+
+```bash
+ENABLE_MCP=1
+MCP_TOKEN=设一个足够长的随机串           # 客户端凭它鉴权
+# MCP_RESOURCE_URL=https://你的域名/mcp  # 部署到公网域名时设（DNS-rebinding 白名单）
+```
+
+服务挂载在 `/mcp`（streamable-http）。
+
+**客户端配置：**
+
+```bash
+# Claude Code
+claude mcp add --transport http wechatrss https://你的域名/mcp \
+  --header "Authorization: Bearer <MCP_TOKEN>"
+```
+
+```jsonc
+// Cursor / Cline 等（JSON 配置）
+{
+  "mcpServers": {
+    "wechatrss": {
+      "url": "https://你的域名/mcp",
+      "headers": { "Authorization": "Bearer <MCP_TOKEN>" }
+    }
+  }
+}
+```
+
+> 本地自测：`http://localhost:5000/mcp`。启用后未带正确 Token 会返回 401。
+
+---
+
 ## API 接口
 
 ### 获取文章内容
@@ -354,6 +404,12 @@ curl "http://localhost:5000/api/rss/MzA1MjM1ODk2MA=="
 | `GET` | `/api/rss/subscriptions` | 获取订阅列表 |
 | `POST` | `/api/rss/poll` | 手动触发轮询 |
 | `GET` | `/api/rss/status` | 轮询器状态 |
+| `GET` | `/api/rss/all` | **聚合源** — 所有订阅合成一个 RSS，阅读器里加一条就够 |
+| `GET` | `/api/rss/category/{category_id}` | **分类源** — 某个分类下所有订阅合成一个 RSS |
+| `GET` | `/api/rss/{fakeid}/history` | 单个公众号的历史文章 RSS |
+| `GET` | `/api/rss/export` | 导出订阅列表（备份 / 迁移） |
+
+> **分类管理**：可把订阅分组（`GET/POST /api/categories`、`PUT/DELETE /api/categories/{id}`、`POST /api/subscriptions/{fakeid}/category`），再用上面的**分类源**按主题订阅，或用**聚合源**一条读全部。
 
 ### Markdown 导出 / 文章同步
 
