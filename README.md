@@ -255,6 +255,10 @@ claude mcp add --transport http wechatrss https://你的域名/mcp \
 
 ## API 接口
 
+> 以下 HTTP 接口**无需鉴权**：调用方不用传任何 Token 或 `Authorization` 头。微信登录态由服务端扫码登录后内部持有并自动使用（前提是管理页面已扫码登录）。`MCP_TOKEN` / `Authorization: Bearer` 仅用于上面的 MCP 客户端接入，与这些 HTTP 接口无关。
+>
+> 文章解析与公众号搜索/文章列表接口（`/api/article`、`/api/public/searchbiz`、`/api/public/accountinfo`、`/api/public/articles`、`/api/public/articles/search`）统一返回 `{ "success": bool, "data": {...}, "error": null }`，**业务数据都在 `data` 字段下**；业务失败（如登录态失效）返回 HTTP 200 且 `success: false`，请以 `success` 字段判断成败。（增量同步接口 `/api/feed/articles.json` 与 `/api/health` 直接返回数据对象、不带此包装；RSS 接口返回 XML；`/api/feed/article/{id}.md` 返回 markdown 文本。）
+
 ### 获取文章内容
 
 `POST /api/article` — 解析微信公众号文章，返回标题、正文、图片等结构化数据
@@ -271,7 +275,7 @@ curl -X POST http://localhost:5000/api/article \
   -d '{"url": "https://mp.weixin.qq.com/s/xxxxx"}'
 ```
 
-返回字段：`title` 标题、`content` HTML 正文、`plain_content` 纯文本正文、`author` 作者、`publish_time` 发布时间戳、`images` 图片列表
+返回字段（均在 `data` 下）：`title` 标题、`content` HTML 正文、`plain_content` 纯文本正文、`images` 图片 URL 列表、`author` 作者、`publish_time` 发布时间戳（秒）、`publish_time_str` 可读发布时间（如 `2026-02-24 09:00:00`）
 
 ### 搜索公众号
 
@@ -287,7 +291,34 @@ curl -X POST http://localhost:5000/api/article \
 curl "http://localhost:5000/api/public/searchbiz?query=公众号名称"
 ```
 
-返回字段：`list[]` 公众号列表，每项包含 `fakeid`、`nickname`、`alias`、`round_head_img`
+返回示例：
+
+```json
+{
+  "success": true,
+  "data": {
+    "list": [
+      {
+        "fakeid": "MzI5NjM4MjExMg==",
+        "nickname": "示例公众号",
+        "alias": "example_wx",
+        "round_head_img": "http://你的部署地址/api/image?url=...",
+        "service_type": 1
+      }
+    ],
+    "total": 1
+  },
+  "error": null
+}
+```
+
+返回字段（公众号列表在 `data.list` 下）：
+- `fakeid` — 公众号唯一 ID（后续获取文章、订阅时使用）
+- `nickname` — 公众号名称
+- `alias` — 微信号
+- `round_head_img` — 头像地址（已转为服务器图片代理链接）
+- `service_type` — 类型（`0`=订阅号 / `1`=服务号 / `2`=企业号）
+- `data.total` — 返回的匹配数量
 
 ### 获取公众号主体信息
 
@@ -342,6 +373,43 @@ curl "http://localhost:5000/api/public/articles?fakeid=YOUR_FAKEID&begin=0&count
 curl "http://localhost:5000/api/public/articles?fakeid=YOUR_FAKEID&begin=50&count=50"
 ```
 
+返回示例：
+
+```json
+{
+  "success": true,
+  "data": {
+    "articles": [
+      {
+        "aid": "2650000000_1",
+        "title": "示例文章标题",
+        "link": "https://mp.weixin.qq.com/s/AbCdEfGhIj",
+        "update_time": 1700000000,
+        "create_time": 1699999000,
+        "digest": "文章摘要",
+        "cover": "http://mmbiz.qpic.cn/cover/0",
+        "author": "作者名"
+      }
+    ],
+    "total": 42,
+    "begin": 0,
+    "count": 1,
+    "keyword": null
+  },
+  "error": null
+}
+```
+
+返回字段（文章列表在 `data.articles` 下）：
+- `aid` — 文章 ID
+- `title` — 标题
+- `link` — 文章链接
+- `update_time` / `create_time` — 更新 / 创建时间戳
+- `digest` — 摘要
+- `cover` — 封面图地址
+- `author` — 作者
+- `data.total` — 该公众号文章总数（微信侧）；`data.count` — 本次返回条数；`data.begin` — 本次偏移量；`data.keyword` — 本次搜索关键词（未传为 `null`）
+
 ### 搜索公众号文章
 
 `GET /api/public/articles/search` — 在指定公众号内按关键词搜索文章
@@ -358,6 +426,8 @@ curl "http://localhost:5000/api/public/articles?fakeid=YOUR_FAKEID&begin=50&coun
 ```bash
 curl "http://localhost:5000/api/public/articles/search?fakeid=YOUR_FAKEID&query=关键词"
 ```
+
+返回结构与「获取文章列表」一致（文章列表在 `data.articles` 下，`data.keyword` 为本次搜索词）。
 
 ### RSS 订阅
 
