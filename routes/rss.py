@@ -136,6 +136,63 @@ async def subscribe(req: SubscribeRequest, request: Request):
     return SubscribeResponse(success=True, message="已订阅，无需重复添加")
 
 
+class BatchSubscribeRequest(BaseModel):
+    lines: list = Field(default_factory=list, description="公众号名称列表，每行一个")
+
+
+@router.post("/rss/batch-subscribe", summary="批量订阅（多个公众号名称）")
+async def batch_subscribe(req: BatchSubscribeRequest, request: Request):
+    """
+    粘一批公众号名称（每行一个）→ 逐个搜索并订阅。
+
+    - 单一匹配：直接订阅；已订阅的跳过并提示。
+    - 多个同名：返回 needs_confirm 让用户勾选（不盲订），前端逐个调 /rss/subscribe。
+    - 搜不到 / 登录态失效：计入 failed 并给原因。
+
+    为保护服务端登录态，单批最多 20 个、逐个搜索并间隔 1s（微信搜索接口有限频）。
+    """
+    import asyncio
+    from routes.search import searchbiz_raw
+
+    base_url = get_base_url(request)
+    lines = [l.strip() for l in (req.lines or []) if l and str(l).strip()][:20]
+    if not lines:
+        raise HTTPException(status_code=400, detail="请输入至少一个公众号名称")
+
+    subscribed_fakeids = {s["fakeid"] for s in rss_store.list_subscriptions()}
+    subscribed, needs_confirm, failed = [], [], []
+
+    for i, line in enumerate(lines):
+        cands, err = await searchbiz_raw(line, base_url)
+        if err:
+            failed.append({"input": line, "reason": err})
+        elif not cands:
+            failed.append({"input": line, "reason": "没搜到该公众号"})
+        elif len(cands) == 1:
+            c = cands[0]
+            if c["fakeid"] in subscribed_fakeids:
+                failed.append({"input": line, "reason": f"已订阅「{c['nickname'] or c['fakeid']}」"})
+            else:
+                rss_store.add_subscription(c["fakeid"], c["nickname"], c["alias"], c["round_head_img"])
+                subscribed_fakeids.add(c["fakeid"])
+                subscribed.append({"input": line, "nickname": c["nickname"] or c["fakeid"]})
+        else:
+            needs_confirm.append({"input": line, "matches": [
+                {"fakeid": c["fakeid"], "nickname": c["nickname"], "alias": c["alias"],
+                 "head_img": c["round_head_img"], "already": c["fakeid"] in subscribed_fakeids}
+                for c in cands]})
+        if i < len(lines) - 1:
+            await asyncio.sleep(1.0)  # 温和：微信搜索接口有限频，别冲爆登录态
+
+    return {
+        "success": True,
+        "subscribed": subscribed,
+        "needs_confirm": needs_confirm,
+        "failed": failed,
+        "summary": {"ok": len(subscribed), "confirm": len(needs_confirm), "fail": len(failed)},
+    }
+
+
 @router.delete("/rss/subscribe/{fakeid}", response_model=SubscribeResponse,
                summary="取消 RSS 订阅")
 async def unsubscribe(fakeid: str):

@@ -20,7 +20,7 @@
 
 ## 功能特性
 
-- **RSS 订阅** — 订阅任意公众号，自动定时拉取新文章（**包含完整文章内容和图片**），生成标准 RSS 2.0 源，接入 FreshRSS / Feedly 等阅读器即可使用
+- **RSS 订阅** — 订阅任意公众号，自动定时拉取新文章（**包含完整文章内容和图片**），生成标准 RSS 2.0 源，接入 FreshRSS / Feedly 等阅读器即可使用；支持**批量添加**（粘多个公众号名称一次性订阅）
 - **MCP · AI 客户端接入** — 内置 MCP 服务，Claude / Codex / Cline / Cursor 等 AI 客户端可**直接搜索、订阅、读文章**（6 个工具，静态 Token 鉴权，单用户自托管无需 OAuth）
 - **文章内容获取** — 通过 URL 获取文章完整内容（标题、作者、正文 HTML / 纯文本、图片列表）
 - **Markdown 导出** — 把已抓取文章导出为 markdown（带 YAML frontmatter，图片走代理可直接渲染），可导入 Obsidian / Logseq；支持按时间游标增量同步全部文章
@@ -219,11 +219,11 @@ cp env.example .env
 | `get_recent_articles` | 拉最新文章（支持时间游标增量、按公众号过滤） |
 | `read_article` | 读某篇文章的完整正文 |
 
-**启用（`.env`）：** 单用户自托管，鉴权走**静态 Bearer Token**，无需 OAuth。
+**启用（`.env`）：** 单用户自托管，鉴权走**静态 Bearer Token**，无需 OAuth。`ENABLE_MCP` 和 `MCP_TOKEN` **两者都要设置**，缺一则 MCP 不启用。
 
 ```bash
 ENABLE_MCP=1
-MCP_TOKEN=设一个足够长的随机串           # 客户端凭它鉴权
+MCP_TOKEN=设一个足够长的随机串           # 客户端凭它鉴权（必填，留空则不启用）
 # MCP_RESOURCE_URL=https://你的域名/mcp  # 部署到公网域名时设（DNS-rebinding 白名单）
 ```
 
@@ -318,7 +318,7 @@ curl "http://localhost:5000/api/public/searchbiz?query=公众号名称"
 - `alias` — 微信号
 - `round_head_img` — 头像地址（已转为服务器图片代理链接）
 - `service_type` — 类型（`0`=订阅号 / `1`=服务号 / `2`=企业号）
-- `data.total` — 返回的匹配数量
+- `data.total` — 匹配数量（已过滤黑名单后的条数）
 
 ### 获取公众号主体信息
 
@@ -495,7 +495,7 @@ curl "http://localhost:5000/api/rss/MzA1MjM1ODk2MA=="
 
 响应含 `next_since`（本批最后一篇的发布时间），作为下次 `since` 循环调用，拉到 `articles` 为空即同步完成；之后用保存的 `next_since` 做每日增量。
 
-`GET /api/feed/article/{id}.md` — 按 `id` 获取单篇文章的 markdown 正文（带 title / author / nickname / fakeid / publish_time / source_url 等 frontmatter）
+`GET /api/feed/article/{id}.md` — 按 `id` 获取单篇文章的 markdown 正文（带 title / author / nickname / fakeid / publish_time / date（可读时间）/ source_url 等 frontmatter）
 
 ```bash
 # 1. 拉文章列表拿 id（循环 since 直到返回空）
@@ -546,6 +546,7 @@ cp env.example .env
 | `RATE_LIMIT_PER_IP` | 单 IP 每分钟请求上限 | 5 |
 | `RATE_LIMIT_ARTICLE_INTERVAL` | 文章请求最小间隔（秒） | 3 |
 | `RSS_POLL_INTERVAL` | RSS 轮询间隔（秒） | 3600 |
+| `ARTICLES_PER_POLL` | 每次轮询每个公众号拉取的文章批次数 | 10 |
 | `RSS_FETCH_FULL_CONTENT` | RSS 是否获取完整内容（true/false） | true |
 | `PROXY_URLS` | **SOCKS5 代理池地址（强烈建议配置，避免账号风控）** | 空 |
 | `SITE_URL` | **网站访问地址（用于RSS图片代理，必须配置）** | http://localhost:5000 |
@@ -658,13 +659,19 @@ PROXY_URLS=socks5://myuser:mypass@vps1-ip:1080,socks5://myuser:mypass@vps2-ip:10
 ├── routes/               # API 路由
 │   ├── article.py        # 文章内容获取
 │   ├── articles.py       # 文章列表
+│   ├── account.py        # 公众号主体信息
 │   ├── rss.py            # RSS 订阅管理与输出
 │   ├── search.py         # 公众号搜索
+│   ├── feed.py           # 本地文章增量同步（articles.json / markdown 导出）
 │   ├── login.py          # 扫码登录
 │   ├── admin.py          # 管理接口
 │   ├── image.py          # 图片代理
 │   ├── health.py         # 健康检查
 │   └── stats.py          # 统计信息
+├── mcp_server/           # MCP 服务（AI 客户端接入）
+│   ├── server.py         # MCP 服务端（静态 Bearer Token 鉴权）
+│   ├── tools.py          # MCP 工具（搜索/订阅/读文章等）
+│   └── store_adapter.py  # 公众号搜索/订阅数据适配
 ├── utils/                # 工具模块
 │   ├── auth_manager.py   # 认证管理
 │   ├── helpers.py        # HTML 解析

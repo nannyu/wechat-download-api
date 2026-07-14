@@ -413,8 +413,17 @@
             <div class="search-row">
                 <input type="text" id="searchInput" placeholder="输入公众号名称搜索...">
                 <button class="btn btn-primary" id="searchBtn" onclick="doSearch()">搜索</button>
+                <button class="btn-sm" onclick="toggleBatch()">批量添加</button>
             </div>
             <div class="search-results" id="searchResults"></div>
+            <div id="batchPanel" style="display:none;margin-top:var(--space-md);">
+                <textarea id="batchInput" rows="6" placeholder="每行一个公众号名称，例如：&#10;人民日报&#10;36氪&#10;央视新闻" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid var(--border-base);border-radius:var(--radius-base);font-size:var(--font-sm);font-family:inherit;resize:vertical;"></textarea>
+                <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:8px;">
+                    <span style="color:var(--text-muted);font-size:var(--font-sm);">每行一个公众号名称，单次最多 20 个；同名会让你选。</span>
+                    <button class="btn btn-primary" id="batchBtn" onclick="doBatchSubscribe()">开始批量添加</button>
+                </div>
+                <div id="batchResults" style="margin-top:var(--space-md);"></div>
+            </div>
         </div>
 
         <div class="sub-section">
@@ -625,6 +634,78 @@
                 btnEl.textContent = '订阅';
                 showToast('网络错误: ' + e.message);
             }
+        }
+
+        function toggleBatch() {
+            var p = document.getElementById('batchPanel');
+            p.style.display = (p.style.display === 'none' || !p.style.display) ? 'block' : 'none';
+        }
+
+        async function doBatchSubscribe() {
+            var ta = document.getElementById('batchInput');
+            var lines = ta.value.split('\n').map(function (s) { return s.trim(); }).filter(Boolean);
+            if (!lines.length) return;
+            var btn = document.getElementById('batchBtn');
+            var panel = document.getElementById('batchResults');
+            btn.disabled = true; btn.textContent = '处理中...';
+            panel.innerHTML = '';
+            try {
+                var res = await fetch('/api/rss/batch-subscribe', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ lines: lines })
+                });
+                var d = await res.json();
+                if (!res.ok) {
+                    panel.innerHTML = '<div style="padding:12px;color:var(--error-color);font-size:var(--font-sm);">' + escHtml((d && d.detail) || '批量添加失败') + '</div>';
+                    return;
+                }
+                renderBatchResults(d);
+                loadSubscriptions();
+                loadStatus();
+            } catch (e) {
+                panel.innerHTML = '<div style="padding:12px;color:var(--error-color);font-size:var(--font-sm);">批量添加失败: ' + escHtml(e.message) + '</div>';
+            } finally {
+                btn.disabled = false; btn.textContent = '开始批量添加';
+            }
+        }
+
+        function renderBatchResults(d) {
+            var panel = document.getElementById('batchResults');
+            var html = '';
+            if (d.subscribed && d.subscribed.length) {
+                html += '<div style="padding:10px 12px;background:var(--bg-secondary);border-radius:var(--radius-base);margin-bottom:8px;font-size:var(--font-sm);color:var(--success-color,#16a34a);">已成功订阅 ' + d.subscribed.length + ' 个：' +
+                    d.subscribed.map(function (s) { return escHtml(s.nickname); }).join('、') + '</div>';
+            }
+            if (d.needs_confirm && d.needs_confirm.length) {
+                d.needs_confirm.forEach(function (nc) {
+                    html += '<div style="font-size:var(--font-sm);color:var(--text-secondary,#666);margin:8px 0 4px;">「' + escHtml(nc.input) + '」有多个同名，选你要的：</div>';
+                    nc.matches.forEach(function (m) {
+                        html += '<div class="search-item">';
+                        html += '<img src="' + (m.head_img || '') + '" alt="" onerror="this.style.display=\'none\'">';
+                        html += '<div class="search-item-info">';
+                        html += '<div class="name">' + escHtml(m.nickname || '') + '</div>';
+                        html += '<div class="alias">' + escHtml(m.alias || m.fakeid || '') + '</div>';
+                        html += '</div>';
+                        if (m.already) {
+                            html += '<span style="font-size:var(--font-sm);color:var(--success-color,#16a34a);">已订阅</span>';
+                        } else {
+                            html += '<button class="btn-subscribe" onclick="doSubscribe(this,\'' +
+                                escAttr(m.fakeid) + '\',\'' + escAttr(m.nickname || '') + '\',\'' +
+                                escAttr(m.alias || '') + '\',\'' + escAttr(m.head_img || '') + '\')">订阅</button>';
+                        }
+                        html += '</div>';
+                    });
+                });
+            }
+            if (d.failed && d.failed.length) {
+                html += '<div style="font-size:var(--font-sm);color:var(--text-muted);margin:8px 0 4px;">未添加 ' + d.failed.length + ' 个：</div>';
+                d.failed.forEach(function (f) {
+                    html += '<div style="font-size:var(--font-sm);color:var(--text-muted);padding:2px 0;">「' + escHtml(f.input) + '」— ' + escHtml(f.reason) + '</div>';
+                });
+            }
+            if (!html) html = '<div style="padding:12px;color:var(--text-muted);font-size:var(--font-sm);">没有结果</div>';
+            panel.innerHTML = html;
         }
 
         async function doUnsub(fakeid) {
