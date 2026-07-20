@@ -62,11 +62,15 @@ async def lifespan(app: FastAPI):
         print("=" * 60 + "\n")
 
     init_db()
-    await rss_poller.start()
-    
-    # 启动登录过期提醒器（自动检测凭证有效期并 webhook 通知）
-    from utils.login_reminder import login_reminder
-    await login_reminder.start()
+    _skip_bg = os.getenv("SKIP_BACKGROUND_TASKS", "").lower() in ("1", "true", "yes")
+    if not _skip_bg:
+        await rss_poller.start()
+
+        # 启动登录过期提醒器（自动检测凭证有效期并 webhook 通知）
+        from utils.login_reminder import login_reminder
+        await login_reminder.start()
+    else:
+        logger.warning("SKIP_BACKGROUND_TASKS 已开 → 轮询器/登录提醒未启动（仅本地测试用）")
 
     # [2026-07-05] MCP streamable-http session manager 随主 app 生命周期运行（否则 /mcp 请求 500）
     from contextlib import AsyncExitStack
@@ -78,8 +82,9 @@ async def lifespan(app: FastAPI):
             logger.info("MCP session manager started")
         yield
 
-    await login_reminder.stop()
-    await rss_poller.stop()
+    if not _skip_bg:
+        await login_reminder.stop()
+        await rss_poller.stop()
 
 
 app = FastAPI(
@@ -109,6 +114,10 @@ app.add_middleware(
 # 按 more_body 分块压（保住 streaming 低内存）；仅客户端 Accept-Encoding 含 gzip 时压；跳过 /mcp。
 from fastapi.middleware.gzip import GZipMiddleware
 
+# 已压缩的二进制下载（zip/docx/xlsx/pdf/epub）再 gzip 是纯浪费 CPU（压不动还要缓冲整个大文件）；
+# 导出的 .html / .json 是文本、仍走 gzip 受益。
+_GZIP_SKIP_SUFFIX = (".zip", ".docx", ".xlsx", ".pdf", ".epub")
+
 
 class _GZipExceptMCP:
     def __init__(self, app):
@@ -116,7 +125,10 @@ class _GZipExceptMCP:
         self._gzip = GZipMiddleware(app, minimum_size=500)
 
     async def __call__(self, scope, receive, send):
-        if scope.get("type") == "http" and not scope.get("path", "").startswith("/mcp"):
+        path = scope.get("path", "")
+        if (scope.get("type") == "http"
+                and not path.startswith("/mcp")
+                and not path.endswith(_GZIP_SKIP_SUFFIX)):
             await self._gzip(scope, receive, send)
         else:
             await self.app(scope, receive, send)
