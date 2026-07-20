@@ -464,6 +464,50 @@
 
     <div class="toast" id="toast"></div>
 
+    <!-- 下载文章弹窗 -->
+    <div id="dlMask" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1100;" onclick="closeDownload(event)">
+        <div style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(480px,92vw);background:var(--bg-primary);border-radius:var(--radius-large);box-shadow:var(--shadow-base);padding:var(--space-lg);" onclick="event.stopPropagation()">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--space-md);">
+                <h2 style="font-size:var(--font-base);font-weight:600;">下载文章</h2>
+                <span style="cursor:pointer;color:var(--text-muted);font-size:20px;line-height:1;" onclick="closeDownload()">&times;</span>
+            </div>
+            <div style="font-size:var(--font-sm);color:var(--text-secondary);margin-bottom:var(--space-md);">
+                <span id="dlNick" style="font-weight:600;color:var(--text-primary);"></span> · 导出本地已抓取的文章正文（不触发新抓取）
+            </div>
+
+            <div style="font-size:var(--font-xs);font-weight:600;color:var(--text-muted);margin-bottom:6px;">时间范围</div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:var(--space-md);" id="dlRange">
+                <button class="dl-range dl-on" data-days="0" onclick="pickRange(this)">全部</button>
+                <button class="dl-range" data-days="30" onclick="pickRange(this)">最近 30 天</button>
+                <button class="dl-range" data-days="180" onclick="pickRange(this)">最近半年</button>
+                <button class="dl-range" data-days="365" onclick="pickRange(this)">最近一年</button>
+            </div>
+
+            <div style="font-size:var(--font-xs);font-weight:600;color:var(--text-muted);margin-bottom:6px;">格式</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+                <button class="dl-fmt" onclick="doDownload('zip')"><b>Markdown</b><small>合集 zip · 归档/喂 AI</small></button>
+                <button class="dl-fmt" onclick="doDownload('html')"><b>HTML</b><small>单文件合集 · 带目录</small></button>
+                <button class="dl-fmt" onclick="doDownload('epub')"><b>EPUB</b><small>电子书 · 手机/阅读器</small></button>
+                <button class="dl-fmt" onclick="doDownload('docx')"><b>Word</b><small>可编辑 · 图片内嵌</small></button>
+                <button class="dl-fmt" onclick="doDownload('pdf')"><b>PDF</b><small>离线自带图 · 最多 200 篇</small></button>
+                <button class="dl-fmt" onclick="doDownload('xlsx')"><b>Excel</b><small>文章清单表</small></button>
+                <button class="dl-fmt" onclick="doDownload('json')"><b>JSON</b><small>文章清单数据</small></button>
+            </div>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:var(--space-md);line-height:1.5;">
+                Word/PDF/EPUB 会现抓图片内嵌进文件、离线可看图，篇数多时稍慢；Markdown/HTML 用图片引用（在线打开显示），秒出。
+            </div>
+        </div>
+    </div>
+
+    <style>
+        .dl-range { padding:6px 14px;border-radius:var(--radius-base);font-size:var(--font-xs);font-weight:600;cursor:pointer;border:1px solid var(--border-base);background:transparent;color:var(--text-secondary); }
+        .dl-range.dl-on { border-color:var(--primary-color);color:var(--primary-color);background:rgba(24,144,255,.06); }
+        .dl-fmt { display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:10px 12px;border-radius:var(--radius-base);border:1px solid var(--border-base);background:var(--bg-primary);cursor:pointer;text-align:left;transition:all var(--duration-fast) var(--ease-in-out); }
+        .dl-fmt:hover { border-color:var(--primary-color);box-shadow:var(--shadow-light); }
+        .dl-fmt b { font-size:var(--font-sm);color:var(--text-primary); }
+        .dl-fmt small { font-size:11px;color:var(--text-muted); }
+    </style>
+
     <script>
         function showToast(msg, duration) {
             var t = document.getElementById('toast');
@@ -537,6 +581,7 @@
                     if (s.historical_count > 0) {
                         html += '<button class="btn-copy" style="background:#fef3c7;color:#92400e;border-color:#fcd34d;" onclick="copyRss(\'' + escAttr(s.historical_rss_url) + '\')" title="历史文章 ' + s.historical_count + ' 篇">历史 RSS</button>';
                     }
+                    html += '<button class="btn-copy" style="background:#eff6ff;color:#1d4ed8;border-color:#bfdbfe;" onclick="openDownload(\'' + escAttr(s.fakeid) + '\',\'' + escAttr(s.nickname || s.fakeid) + '\')">下载文章</button>';
                     html += '<button class="btn-unsub" onclick="doUnsub(\'' + escAttr(s.fakeid) + '\')">取消</button>';
                     html += '</div></div></li>';
                 });
@@ -768,6 +813,41 @@
             } else {
                 bar.style.display = 'none';
             }
+        }
+
+        // ── 下载文章弹窗 ─────────────────────────────
+        var dlState = { fakeid: '', days: 0 };
+
+        function openDownload(fakeid, nickname) {
+            dlState.fakeid = fakeid;
+            dlState.days = 0;
+            document.getElementById('dlNick').textContent = nickname;
+            // 重置时间范围为「全部」
+            var btns = document.querySelectorAll('#dlRange .dl-range');
+            btns.forEach(function(b) { b.classList.toggle('dl-on', b.getAttribute('data-days') === '0'); });
+            document.getElementById('dlMask').style.display = 'block';
+        }
+
+        function closeDownload(e) {
+            document.getElementById('dlMask').style.display = 'none';
+        }
+
+        function pickRange(btn) {
+            document.querySelectorAll('#dlRange .dl-range').forEach(function(b) { b.classList.remove('dl-on'); });
+            btn.classList.add('dl-on');
+            dlState.days = parseInt(btn.getAttribute('data-days'), 10) || 0;
+        }
+
+        function doDownload(ext) {
+            if (!dlState.fakeid) return;
+            var url = '/api/export/account/' + encodeURIComponent(dlState.fakeid) + '.' + ext;
+            if (dlState.days > 0) {
+                var since = Math.floor(Date.now() / 1000) - dlState.days * 86400;
+                url += '?since=' + since;
+            }
+            showToast('正在生成，请稍候…');
+            window.location.href = url;  // 附件下载：Content-Disposition 触发下载，不跳转页面
+            closeDownload();
         }
 
         function toggleExportMenu() {

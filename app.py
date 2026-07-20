@@ -25,7 +25,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pathlib import Path
 
 # 导入路由
-from routes import article, articles, search, admin, login, image, health, stats, rss, account, feed
+from routes import article, articles, search, admin, login, image, health, stats, rss, account, feed, export
 from utils.rss_store import init_db
 from utils.rss_poller import rss_poller
 
@@ -136,6 +136,7 @@ app.include_router(login.router, prefix="/api/login", tags=["登录"])
 app.include_router(image.router, prefix="/api", tags=["图片代理"])
 app.include_router(rss.router, prefix="/api", tags=["RSS 订阅"])
 app.include_router(feed.router, prefix="/api", tags=["Feed（文章列表 / markdown 导出）"])
+app.include_router(export.router, prefix="/api", tags=["文章导出（整号 md/html/pdf/docx/epub/xlsx/json）"])
 
 # ---------- MCP server（单机版 AI 客户端入口；ENABLE_MCP + MCP_TOKEN 静态 Bearer 鉴权） ----------
 # 让 Claude/Codex/Cline 等 AI 客户端直接搜索/订阅/读你的公众号文章。

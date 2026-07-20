@@ -391,6 +391,48 @@ def get_article_by_id(article_id: int) -> Optional[Dict]:
         conn.close()
 
 
+def get_export_articles(fakeid: str, since: int = 0, before: int = 0,
+                        limit: int = 3000) -> List[Dict]:
+    """
+    取某号已抓到正文的文章（含 poll + deep_fetch 两种来源），按发布倒序，供整号导出用。
+    since/before 为可选时间窗（秒级时间戳，0=不限）。
+    """
+    conn = _get_conn()
+    try:
+        sql = "SELECT * FROM articles WHERE fakeid=? AND content != ''"
+        params: list = [fakeid]
+        if since:
+            sql += " AND publish_time >= ?"
+            params.append(since)
+        if before:
+            sql += " AND publish_time <= ?"
+            params.append(before)
+        sql += " ORDER BY publish_time DESC, id DESC LIMIT ?"
+        params.append(limit)
+        rows = conn.execute(sql, params).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def count_export_articles(fakeid: str, since: int = 0, before: int = 0) -> int:
+    """统计某号在给定时间窗内已抓到正文的文章数（供导出截断提示）。"""
+    conn = _get_conn()
+    try:
+        sql = "SELECT COUNT(*) AS cnt FROM articles WHERE fakeid=? AND content != ''"
+        params: list = [fakeid]
+        if since:
+            sql += " AND publish_time >= ?"
+            params.append(since)
+        if before:
+            sql += " AND publish_time <= ?"
+            params.append(before)
+        row = conn.execute(sql, params).fetchone()
+        return row["cnt"] if row else 0
+    finally:
+        conn.close()
+
+
 def get_feed_articles(since: int = 0, fakeid: Optional[str] = None,
                       limit: int = 50) -> List[Dict]:
     """
