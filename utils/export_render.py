@@ -32,9 +32,61 @@ logger = logging.getLogger(__name__)
 
 _WX_HOSTS = ("mmbiz.qpic.cn", "mmbiz.qlogo.cn", "wx.qlogo.cn", "res.wx.qq.com")
 
-# 全局跨「所有导出请求」共享的抓图并发闸：单请求提速，同时多个导出并跑也不会叠加把服务器
-# 和 mmbiz 压垮（共用这些并发，不是各占各的）。绑事件循环，单进程 async 下即全局。
-_GLOBAL_IMG_SEM = asyncio.Semaphore(16)
+# 全局跨「所有导出请求」共享的抓图并发闸：跨境抓图是延迟型 IO，高并发能把等待重叠起来。
+# 按事件循环惰性创建（单进程 uvicorn 只有一个 loop = 全局；多 loop 场景如测试也不会串味）。
+_SEM_LIMIT = 24
+_sem_by_loop: dict = {}
+
+
+def _img_sem() -> asyncio.Semaphore:
+    loop = asyncio.get_running_loop()
+    sem = _sem_by_loop.get(loop)
+    if sem is None:
+        sem = asyncio.Semaphore(_SEM_LIMIT)
+        _sem_by_loop[loop] = sem
+    return sem
+
+
+# 进程内原图缓存（跨「同一次服务运行」的多次导出共享最贵的跨境抓取）：
+# 第一次导出把 154 张图抓到内存，之后同号导任意格式/尺寸只需本地重压、不再跨境抓 → 秒出。
+# 存**原图 bytes**（尺寸无关，各格式按各自 max_side 现压）；带总字节上限 + FIFO 淘汰，防内存爆。
+_RAW_CACHE: dict = {}          # url -> raw bytes（dict 保插入序，淘汰取最早）
+_RAW_CACHE_BYTES = 0
+_RAW_CACHE_MAX_BYTES = 128 * 1024 * 1024   # 整个缓存最多占 128MB
+_RAW_CACHE_MAX_ITEM = 3 * 1024 * 1024      # 单张超 3MB 不缓存（超大长图，免一张顶掉一堆）
+
+
+def _raw_cache_get(url: str):
+    return _RAW_CACHE.get(url)
+
+
+def _raw_cache_put(url: str, raw: bytes):
+    global _RAW_CACHE_BYTES
+    if url in _RAW_CACHE or len(raw) > _RAW_CACHE_MAX_ITEM:
+        return
+    _RAW_CACHE[url] = raw
+    _RAW_CACHE_BYTES += len(raw)
+    while _RAW_CACHE_BYTES > _RAW_CACHE_MAX_BYTES and _RAW_CACHE:
+        k = next(iter(_RAW_CACHE))
+        _RAW_CACHE_BYTES -= len(_RAW_CACHE.pop(k))
+
+
+# 压好的图缓存（按 尺寸+url）：同尺寸重复导（如先 Word 后 EPUB 都 800）连重压都省，直接拿现成 data-URI。
+_COMP_CACHE: dict = {}          # (max_side, url) -> data_uri str
+_COMP_CACHE_BYTES = 0
+_COMP_CACHE_MAX_BYTES = 96 * 1024 * 1024
+
+
+def _comp_cache_put(key, data_uri: str):
+    global _COMP_CACHE_BYTES
+    if key in _COMP_CACHE:
+        return
+    _COMP_CACHE[key] = data_uri
+    _COMP_CACHE_BYTES += len(data_uri)
+    while _COMP_CACHE_BYTES > _COMP_CACHE_MAX_BYTES and _COMP_CACHE:
+        k = next(iter(_COMP_CACHE))
+        _COMP_CACHE_BYTES -= len(_COMP_CACHE.pop(k))
+
 
 _IMG_TAG_RE = re.compile(r'<img\b[^>]*>', re.IGNORECASE)
 _SRC_RE = re.compile(r'\bsrc="([^"]+)"', re.IGNORECASE)
@@ -85,17 +137,26 @@ def _compress_to_datauri(raw: bytes, max_side: int, jpeg_q: int) -> str:
 
 
 async def _fetch_datauri(client: httpx.AsyncClient, url: str, max_side: int, jpeg_q: int):
-    async with _GLOBAL_IMG_SEM:  # 全局限并发，多导出共享
-        try:
-            r = await client.get(url, headers={"Referer": "https://mp.weixin.qq.com/"},
-                                 timeout=12.0, follow_redirects=True)
-            if r.status_code != 200 or not r.content:
+    ck = (max_side, url)
+    du = _COMP_CACHE.get(ck)  # 同尺寸重复导：连重压都省
+    if du is not None:
+        return du
+    raw = _raw_cache_get(url)  # 跨尺寸共享：命中则跳过最贵的跨境抓取，只需重压
+    if raw is None:
+        async with _img_sem():  # 全局限并发，多导出共享
+            try:
+                r = await client.get(url, headers={"Referer": "https://mp.weixin.qq.com/"},
+                                     timeout=12.0, follow_redirects=True)
+                if r.status_code != 200 or not r.content:
+                    return None
+                raw = r.content
+            except Exception:
                 return None
-            raw = r.content
-        except Exception:
-            return None
+        _raw_cache_put(url, raw)
     # 压缩放线程池，避免大图阻塞事件循环
-    return await asyncio.to_thread(_compress_to_datauri, raw, max_side, jpeg_q)
+    du = await asyncio.to_thread(_compress_to_datauri, raw, max_side, jpeg_q)
+    _comp_cache_put(ck, du)
+    return du
 
 
 def _datauri_to_bytes(data_uri: str):
