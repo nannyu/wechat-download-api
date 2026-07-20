@@ -58,7 +58,8 @@ async def proxy_image(url: str = Query(..., description="图片URL")):
     # 打开 stream 拿 headers 做预检，client 和 response 生命周期托管到 generator
     client = httpx.AsyncClient(timeout=30.0)
     try:
-        request = client.build_request("GET", url)
+        # [2026-07-20] 带合法 referer mp.weixin.qq.com：微信防盗链永远放行（比无 referer 更稳）
+        request = client.build_request("GET", url, headers={"Referer": "https://mp.weixin.qq.com/"})
         response = await client.send(request, stream=True, follow_redirects=True)
     except Exception as e:
         await client.aclose()

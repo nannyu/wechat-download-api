@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from html import escape as html_escape
 from typing import Iterator
 
-from utils.image_proxy import proxy_image_url
+from utils.image_proxy import proxy_image_url, to_direct_wechat_images
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +46,8 @@ def _build_item_xml(article: dict, base_url: str) -> str:
     author_escaped = html_escape(author) if author else ""
     title_escaped = html_escape(title)
     
-    content_html = article.get("content", "")
+    # [2026-07-20] 正文图片直连 mmbiz + no-referrer，避免阅读器走代理跨境拉图慢
+    content_html = to_direct_wechat_images(article.get("content", ""))
     html_parts = []
     
     if content_html:

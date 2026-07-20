@@ -8,7 +8,37 @@
 图片 URL 处理工具
 统一处理微信 CDN HTTP 图片转 HTTPS 代理
 """
-from urllib.parse import quote
+import re
+from urllib.parse import quote, unquote
+
+
+def to_direct_wechat_images(html: str) -> str:
+    """
+    [2026-07-20] 读路径图片加速：把正文图片改成「直连 mmbiz + referrerpolicy=no-referrer」。
+
+    存储的正文里图片是 `<host>/api/image?url=<编码原图>` 代理 URL（content_processor 处理过），
+    阅读器走代理跨境拉图很慢。此函数把代理 URL 还原成直连 mmbiz、并给每个 <img> 补
+    referrerpolicy="no-referrer"——浏览器不发 referer，微信防盗链放行，直连 CDN 最快。
+
+    幂等：已直连的原样、只补 referrerpolicy；代理的先还原再补。存量内容无需迁移 DB。
+    """
+    if not html:
+        return html
+    # 1) 去代理 → 直连：<host>/api/image?url=<encoded mmbiz> → 直连 mmbiz
+    html = re.sub(
+        r'https?://[^"\'\s)]*/api/image\?url=([^"\'\s)]+)',
+        lambda m: unquote(m.group(1)),
+        html,
+    )
+
+    # 2) 每个 <img> 补 referrerpolicy=no-referrer（已有则跳过，幂等）
+    def _add_rp(m):
+        tag = m.group(0)
+        if 'referrerpolicy' in tag.lower():
+            return tag
+        return '<img referrerpolicy="no-referrer"' + tag[4:]
+
+    return re.sub(r'<img\b[^>]*>', _add_rp, html, flags=re.IGNORECASE)
 
 
 def proxy_image_url(url: str, base_url: str) -> str:
