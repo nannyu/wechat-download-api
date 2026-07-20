@@ -92,3 +92,17 @@ CHANGELOG_*.md
 HISTORICAL_*.md
 OPENSOURCE_AUDIT_*.md
 VERIFY_*.md
+
+# 个人产品/架构策略与设计讨论 MD（私有思考材料，绝不提交开源仓库）
+MATRIX_*.md
+PRODUCT_*.md
+ADAPTIVE_*.md
+INFRA_*.md
+POLLER_*.md
+WECHATRSS_*.md
+*_ROADMAP_*.md
+*_BLUEPRINT.md
+*_STRATEGY_*.md
+*_DISCUSSION_*.md
+*_DESIGN_*.md
+*_PILOT_*.md

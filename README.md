@@ -23,7 +23,7 @@
 - **RSS 订阅** — 订阅任意公众号，自动定时拉取新文章（**包含完整文章内容和图片**），生成标准 RSS 2.0 源，接入 FreshRSS / Feedly 等阅读器即可使用；支持**批量添加**（粘多个公众号名称一次性订阅）
 - **MCP · AI 客户端接入** — 内置 MCP 服务，Claude / Codex / Cline / Cursor 等 AI 客户端可**直接搜索、订阅、读文章**（6 个工具，静态 Token 鉴权，单用户自托管无需 OAuth）
 - **文章内容获取** — 通过 URL 获取文章完整内容（标题、作者、正文 HTML / 纯文本、图片列表）
-- **Markdown 导出** — 把已抓取文章导出为 markdown（带 YAML frontmatter，图片走代理可直接渲染），可导入 Obsidian / Logseq；支持按时间游标增量同步全部文章
+- **多格式导出** — 单篇 markdown 增量同步（带 YAML frontmatter，导入 Obsidian / Logseq）；整号文章一键打包成 **Markdown / HTML / Word / PDF / EPUB / Excel / JSON** 7 种格式（Word/PDF/EPUB 图片内嵌离线可看），纯读本地库、不触发抓取
 - **反风控体系** — Chrome TLS 指纹模拟 + SOCKS5 代理池轮转 + 三层自动限频，有效对抗微信封控
 - **文章列表 & 搜索** — 获取任意公众号历史文章列表，支持分页和关键词搜索
 - **公众号搜索** — 按名称搜索公众号，获取 FakeID
@@ -506,6 +506,39 @@ curl -OJ "http://localhost:5000/api/feed/article/1.md"
 ```
 
 状态码：`200` 正文 / `404` 不存在 / `422` 内容尚未抓取完成（稍后重试）。
+
+### 整号文章导出（多格式）
+
+把某个公众号**已抓取入库**的文章一次性打包下载，支持 7 种格式。**纯读本地库、不触发任何微信抓取**；在 RSS 管理页（`/rss.html`）每个订阅右侧点「下载文章」即可选格式与时间范围，也可直接调接口。
+
+`GET /api/export/account/{fakeid}.{格式}`
+
+| 格式 | 后缀 | 说明 | 图片 |
+|------|------|------|------|
+| Markdown 合集 | `.zip` | 每篇一个 `.md` + `INDEX.md`，适合归档 / 喂 AI | 引用式（指向 `/api/image` 代理） |
+| HTML 合集 | `.html` | 单文件，带目录、暗色适配 | 引用式 |
+| Excel | `.xlsx` | 文章清单表（标题 / 作者 / 时间 / 链接） | — |
+| JSON | `.json` | 文章清单数据 | — |
+| Word | `.docx` | 可编辑，图去重压缩 | **内嵌**（离线可看） |
+| PDF | `.pdf` | 内置中文字体，排版固定 | **内嵌** |
+| EPUB | `.epub` | 每篇一章 + 目录，手机 / 阅读器读合集 | **内嵌** |
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `since` | int（查询） | 否 | 只导 `publish_time >= since` 的文章（时间窗起点 / 增量），秒级时间戳 |
+| `before` | int（查询） | 否 | 只导 `publish_time <= before` 的文章（时间窗终点） |
+| `limit` | int（查询） | 否 | 最多导出篇数（最近优先）。md/html/xlsx/json 上限 3000，Word/EPUB 500，PDF 200 |
+
+```bash
+# 整号导出为 Markdown 合集 zip（浏览器 / -OJ 会按「公众号名_导出_N篇.zip」自动命名）
+curl -OJ "http://localhost:5000/api/export/account/MzA1MjM1ODk2MA==.zip"
+
+# 只导最近 30 天、导成 EPUB
+SINCE=$(($(date +%s) - 30*86400))
+curl -OJ "http://localhost:5000/api/export/account/MzA1MjM1ODk2MA==.epub?since=$SINCE"
+```
+
+> Markdown / HTML / Excel / JSON 用图片引用式，秒出、零抓图带宽（在线打开时显示图）；Word / PDF / EPUB 会现抓微信图内嵌进文件、离线自带图，篇数多时稍慢。全部只导已抓到正文的文章。
 
 ### 其他接口
 
