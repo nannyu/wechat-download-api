@@ -2,9 +2,9 @@
 
 # WeChat Download API
 
-### 微信公众号文章获取 & RSS 订阅服务
+### 微信公众号文章获取 · RSS 订阅 · 多格式导出
 
-**完全开源 | 免费部署 | RSS 订阅 | 文章抓取 | 反风控**
+**完全开源 | 免费部署 | RSS 订阅 | 文章抓取 | 多格式导出 | 反风控**
 
 [![GitHub stars](https://img.shields.io/github/stars/tmwgsicp/wechat-download-api?style=for-the-badge&logo=github)](https://github.com/tmwgsicp/wechat-download-api/stargazers)
 [![License](https://img.shields.io/badge/License-AGPL%203.0-blue?style=for-the-badge)](LICENSE)
@@ -40,6 +40,31 @@
   <img src="assets/rss.jpg" width="800" alt="RSS 订阅管理">
   <p><em>RSS 订阅管理 — 搜索公众号一键订阅，复制地址接入 RSS 阅读器</em></p>
 </div>
+
+---
+
+## 📦 整号导出，随身带走
+
+订阅只是第一步。**把整个公众号的存量文章一键打包成你想要的格式**——喂给 AI、导入笔记、离线存档、换设备迁移，全都行。
+
+- ❌ 一篇一篇复制粘贴，图片还丢失
+- ❌ 想喂给 AI，却拿不到干净的 Markdown
+- ❌ 换阅读器 / 换设备，历史内容带不走
+- ✅ **一个公众号一键打包**，7 种格式任选，**纯读本地库、不触发任何微信抓取**（零风控风险）
+
+| 格式 | 后缀 | 适合场景 | 图片 | 单次上限 |
+|------|------|----------|------|----------|
+| 📝 Markdown 合集 | `.zip` | 归档 / 喂 AI / 导入 Obsidian、Logseq | 引用式 | 3000 |
+| 🌐 HTML 合集 | `.html` | 单文件、带目录、暗色适配，浏览器直接看 | 引用式 | 3000 |
+| 📊 Excel | `.xlsx` | 文章清单表（标题 / 作者 / 时间 / 链接） | — | 3000 |
+| 🔧 JSON | `.json` | 二次开发 / 数据分析 | — | 3000 |
+| 📄 Word | `.docx` | 可编辑文档，图去重压缩 | **内嵌** | 500 |
+| 📕 PDF | `.pdf` | 固定排版、内置中文字体免装 | **内嵌** | 200 |
+| 📱 EPUB | `.epub` | 手机 / 电子书阅读器读合集 | **内嵌** | 500 |
+
+> **文本/表格类**（Markdown / HTML / Excel / JSON）图片引用式、秒出、零抓图带宽；**离线自包含类**（Word / PDF / EPUB）会把微信图现抓内嵌进文件、断网也能看图。全部只导已抓到正文的文章，支持按时间范围（全部 / 最近 N 天 / 时间窗 / 增量）筛选。
+
+在 **RSS 管理页**（`/rss.html`）每个订阅右侧点「**下载文章**」即可可视化选格式与时间范围；也可直接调接口 `GET /api/export/account/{fakeid}.{格式}`，详见下方 [整号文章导出（多格式）](#整号文章导出多格式)。
 
 ---
 
